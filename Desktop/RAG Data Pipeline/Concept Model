@@ -1,0 +1,139 @@
+## High-Level System Architecture
+
+At its core, the system is a sophisticated, multi-path retrieval-augmented generation engine. It's designed not as a simple pipeline, but as an orchestrated set of microservices that are intelligently selected based on user intent.
+
+The architecture is split into three main parts:
+
+
+The Offline Data Ingestion Pipeline: This is where all knowledge is processed, structured, and stored.
+
+The Online Inference Pipeline: This is the real-time, user-facing part that answers queries.
+
+The Asynchronous Feedback Loop: This is the system that allows for continuous improvement and adaptation over time.
+
+## Component 1: The Offline Data Ingestion Pipeline
+
+This is the foundation of your system's intelligence. Its goal is to take raw, unstructured, or semi-structured client data and transform it into a highly searchable knowledge base.
+
+
+1. Data Source Connectors:
+
+Function: Securely connect to and pull data from various client sources (e.g., SharePoint, Google Drive, local file uploads, Confluence).
+
+Technology: Use pre-built connectors from libraries like LlamaIndex or build custom API clients. This needs to be robust and handle authentication securely (OAuth2).
+
+2. File Type Router & Parser:
+
+Function: Ingests a file and routes it based on its type (e.g., .pdf, .docx, .xlsx, .pptx). Each file type is sent to a specialized parser.
+
+.xlsx files are sent to a Specialized Excel Parser that extracts not only cell text but also tables (as Markdown), VBA macros (as code blocks), and renders charts (as images).
+
+.pdf and .pptx files are sent to a multi-modal parsing service that extracts text, tables, and images.
+
+Technology: Python services using libraries like pypdf, python-docx, and openpyxl.
+
+3. Pre-processing & Chunking Engine:
+
+Function: Takes the parsed content and chunks it into meaningful pieces. This isn't just a fixed-size split; it's a "semantic chunking" engine that tries to split by paragraphs, sections, or slides to preserve context.
+
+Technology: Custom Python logic or advanced chunking methods from libraries like LangChain.
+
+4. Dual Knowledge Base Creation:
+
+Function: This is the critical step where the chunked data is sent to two different systems in parallel.
+
+A. The Vector Database (for Semantic Search):
+
+Each chunk of text, code, or table is sent to an embedding model (e.g., text-embedding-3-large).
+
+The resulting vector embeddings are stored in a Vector DB.
+
+Technology: Pinecone, Weaviate, or Vertex AI Vector Search.
+
+B. The Graph Database (for Relational Facts):
+
+The chunks are also sent to an LLM with a specific prompt to perform Entity and Relationship Extraction.
+
+The LLM identifies nodes (e.g., people, companies, metrics) and edges (e.g., "works_at," "audited_by," "has_revenue").
+
+This structured data is then loaded into a Graph DB.
+
+Technology: Neo4j or Amazon Neptune.
+
+## Component 2: The Online Inference Pipeline
+
+This is the real-time engine that a user interacts with. It's built for low-latency decision-making and high-accuracy responses.
+
+
+1. API Gateway & Frontend:
+
+Function: The user's query enters the system here. This layer handles user authentication, rate limiting, and request validation.
+
+2. Semantic Caching Layer:
+
+Function: Before any processing, the system checks if a semantically similar query has been answered recently.
+
+It takes the user's query, embeds it, and searches a separate, simple vector cache of past question-answer pairs. If a close match is found, the cached answer is returned instantly.
+
+Technology: Redis with a vector search index, or a managed service like GPTCache.
+
+3. The Query Router:
+
+Function: If no cache hit, the query is sent to the "brain" of the operation. This is a fast, cheap LLM call (e.g., Gemini Flash, GPT-3.5-Turbo).
+
+Its prompt is highly structured to classify the user's intent: is it a graph_query or a semantic_query?
+
+4. Path A: The GraphRAG Path:
+
+Function: Triggered if the router decides graph_query.
+
+4a. NL-to-Graph Query: An LLM translates the user's question into the appropriate graph query language (e.g., Cypher).
+
+4b. Graph DB Execution: The query is run against the Graph DB, returning structured, factual data.
+
+4c. Context Packaging: The clean results are packaged as context.
+
+5. Path B: The Semantic Search Path:
+
+Function: Triggered if the router decides semantic_query.
+
+5a. Ensemble HyDE: The query is sent in parallel to 3-5 different small, fast LLMs to generate hypothetical documents.
+
+5b. Hybrid Search: These hypothetical documents are used as queries to the Vector DB. The search uses both vector similarity and keyword matching to retrieve the top 50 candidate chunks.
+
+5c. Reranker: The top 50 chunks and the original user query are sent to a specialized reranker model (e.g., Cohere Rerank), which re-scores them for relevance and selects the absolute best 3-5 chunks.
+
+5d. Context Packaging: These highly relevant chunks are packaged as context.
+
+6. The Final Generation Layer:
+
+Function: The context from either Path A or Path B is passed to a powerful, state-of-the-art LLM (e.g., Gemini 1.5 Pro, GPT-4o).
+
+This layer uses the Context-Distillation Prompting technique we discussed, first asking the model to identify the relevant facts within the context before synthesizing the final, user-facing answer.
+
+## Component 3: The Asynchronous Feedback Loop
+
+This component ensures the system gets smarter over time. It does not operate in real-time.
+
+
+1. Logging & Telemetry:
+
+Function: Every step of every query is logged: the router's decision, the retrieved chunks, the user's feedback (thumbs up/down), the final answer, and latency.
+
+Technology: A logging service like Datadog or a custom solution using a data warehouse like BigQuery.
+
+2. Offline Analysis Engine:
+
+Function: A separate process (e.g., a nightly or weekly job) runs over these logs.
+
+It uses statistical analysis to identify "bad chunks" (chunks that are frequently part of negatively-rated answers) or incorrect graph relationships.
+
+3. Knowledge Base Adjustment:
+
+Function: The analysis engine triggers actions.
+
+For the Vector DB, it might send an instruction to down-weight a problematic chunk's vector by adding negative metadata.
+
+For the Graph DB, it might flag a relationship for human review or automatically prune it if confidence is low.
+
+### 

@@ -1,0 +1,112 @@
+# RAG Pipeline Configuration
+# This file provides default settings that can be overridden via environment variables
+
+# Embedding Model Configuration
+embedding:
+  model_name: "BAAI/bge-large-en-v1.5"
+  device: "cpu"
+  batch_size: 32
+  max_sequence_length: 512
+
+# Vector Store Configuration  
+vector_store:
+  project_id: ""  # Set via GOOGLE_CLOUD_PROJECT
+  location: "us-central1"
+  index_endpoint_name: "rag-pipeline-index"
+  deployed_index_id: "rag-pipeline-deployed"
+  embedding_dimension: 1024
+  distance_measure: "DOT_PRODUCT_DISTANCE"
+
+# Chunking Configuration
+chunking:
+  child_chunk_size: 250
+  parent_chunk_size: 750
+  chunk_overlap: 0.15
+  tokenizer_model: "cl100k_base"
+
+# Cache Configuration
+cache:
+  max_size: 10000
+  ttl_seconds: 3600
+
+# Reranker Configuration
+reranker:
+  type: "cohere"
+  model_name: "rerank-english-v3.0"
+  max_chunks_per_query: 1000
+  api_base_url: "https://api.cohere.ai/v1"
+
+# HyDE Configuration
+hyde:
+  enabled: true
+  num_hypothetical_docs: 3
+  models:
+    - "gemini-1.5-flash"
+    - "gemini-1.5-pro"
+  temperature: 0.7
+  max_tokens: 150
+
+# Search Configuration
+search:
+  hybrid_fusion_weight: 0.6  # Weight for vector search vs text search
+  rrf_constant: 60  # Reciprocal Rank Fusion constant
+  default_top_k: 20
+  max_top_k: 100
+
+# Context Packaging
+context:
+  max_context_tokens: 8000
+  include_parent_chunks: true
+  chunk_separator: "\n\n---\n\n"
+  metadata_fields: ["source", "document_id", "chunk_type"]
+
+# Knowledge Base Adjustment
+knowledge_base:
+  adjustment_enabled: true
+  feedback_window_size: 100
+  min_feedback_count: 5
+  relevance_threshold: 0.7
+  adjustment_factor: 0.1
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+  workers: 4
+  log_level: "info"
+  cors_origins: ["*"]
+  rate_limit_requests_per_minute: 60
+
+# Authentication
+auth:
+  enabled: false
+  api_key: ""  # Set via API_KEY environment variable
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "json"
+  include_timestamp: true
+  include_caller: true
+
+# Performance Configuration
+performance:
+  request_timeout_seconds: 30
+  max_concurrent_requests: 10
+  vector_search_timeout_seconds: 10
+  rerank_timeout_seconds: 15
+
+# Evaluation Configuration
+evaluation:
+  metrics: ["faithfulness", "answer_relevancy", "context_relevancy"]
+  sample_size: 100
+  langsmith_project: "rag-pipeline-eval"
+  ragas_batch_size: 10
+
+# Development Configuration
+development:
+  debug: false
+  hot_reload: false
+  mock_external_apis: false
+  log_request_bodies: false

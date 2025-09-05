@@ -16,6 +16,7 @@ except ImportError:
 from ..core.config import settings
 from ..core.exceptions import EvaluationException
 from ..core.logging_config import get_logger, log_performance
+from ..core.pii_detection import pii_detector
 
 
 class LangSmithClient:
@@ -108,24 +109,29 @@ class LangSmithClient:
             return "tracking_failed"
     
     def _track_session_sync(self, session_data: Dict[str, Any]) -> None:
-        """Synchronous session tracking for executor."""
+        """Synchronous session tracking for executor with PII sanitization."""
         try:
-            # Create a run in Langsmith
+            # Sanitize all data before sending to external service
+            sanitized_data = pii_detector.sanitize_for_external_service(session_data, "langsmith")
+            
+            # Create a run in Langsmith with sanitized data
             self.client.create_run(
                 name="rag_query",
                 run_type="chain",
                 project_name=self.project_name,
                 inputs={
-                    "query": session_data["query"],
-                    "contexts_count": len(session_data["contexts"])
+                    "query": sanitized_data["query"],
+                    "contexts_count": len(session_data["contexts"]),
+                    "has_pii": pii_detector.has_pii(str(session_data))
                 },
                 outputs={
-                    "answer": session_data["generated_answer"],
-                    "contexts": session_data["contexts"][:3]  # Limit contexts for storage
+                    "answer": sanitized_data["generated_answer"],
+                    "contexts": sanitized_data.get("contexts", [])[:3]  # Limited and sanitized
                 },
                 extra={
-                    "metadata": session_data["metadata"],
-                    "performance_metrics": session_data["performance_metrics"]
+                    "metadata": sanitized_data.get("metadata", {}),
+                    "performance_metrics": sanitized_data.get("performance_metrics", {}),
+                    "pii_summary": pii_detector.get_pii_summary(str(session_data))
                 }
             )
             

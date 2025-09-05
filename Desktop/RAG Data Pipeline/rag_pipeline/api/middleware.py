@@ -2,6 +2,7 @@
 
 import time
 import uuid
+import hmac
 from typing import Callable, Dict, Any
 from fastapi import Request, Response, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -19,14 +20,18 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.logger = get_logger(__name__, "auth_middleware")
     
+    def _secure_compare(self, a: str, b: str) -> bool:
+        """Constant-time string comparison to prevent timing attacks."""
+        return hmac.compare_digest(a.encode(), b.encode())
+    
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip auth for health and docs endpoints
         if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
             return await call_next(request)
         
-        # Check API key
+        # Check API key using constant-time comparison
         api_key = request.headers.get("X-API-Key")
-        if not api_key or api_key != settings.api_key:
+        if not api_key or not self._secure_compare(api_key, settings.api_key):
             self.logger.warning(
                 f"Unauthorized access attempt from {request.client.host}",
                 extra={"path": request.url.path, "client_host": request.client.host}

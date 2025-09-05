@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import time
 import asyncio
+import os
 
 from ..core.config import settings
 from ..core.logging_config import setup_logging, get_logger
@@ -13,9 +14,11 @@ from .middleware import (
     AuthenticationMiddleware,
     ExceptionHandlingMiddleware,
     RequestLoggingMiddleware,
-    RateLimitingMiddleware
+    RateLimitingMiddleware,
+    SecurityHeadersMiddleware,
+    RequestSizeLimitMiddleware
 )
-from .routers import inference, vector_store, evaluation
+from .routers import inference, vector_store, evaluation, document_ingestion, firebase_webhook
 
 
 # Setup logging
@@ -32,15 +35,31 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+allowed_origins = [
+    "http://localhost:3000",  # React dev server
+    "http://localhost:5000",  # Alternative dev server
+    "https://yourdomain.com",  # Production domain (replace with actual)
+    "https://api.yourdomain.com",  # API domain (replace with actual)
+]
+
+# Add environment-specific origins
+if "ALLOWED_ORIGINS" in os.environ:
+    env_origins = os.environ["ALLOWED_ORIGINS"].split(",")
+    allowed_origins.extend([origin.strip() for origin in env_origins])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],  # Restrict to needed methods
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+    expose_headers=["X-Request-ID"],
+    max_age=86400  # Cache preflight for 24 hours
 )
 
-# Add custom middleware (order matters)
+# Add custom middleware (order matters - first added runs last)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestSizeLimitMiddleware, max_size=100 * 1024 * 1024)  # 100MB limit
 app.add_middleware(ExceptionHandlingMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitingMiddleware)
@@ -50,6 +69,8 @@ app.add_middleware(AuthenticationMiddleware)
 app.include_router(inference.router)
 app.include_router(vector_store.router)
 app.include_router(evaluation.router)
+app.include_router(document_ingestion.router)
+app.include_router(firebase_webhook.router)
 
 
 @app.on_event("startup")

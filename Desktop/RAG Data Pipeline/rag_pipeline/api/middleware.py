@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from ..core.config import settings
 from ..core.exceptions import RAGPipelineException
 from ..core.logging_config import get_logger, log_exception
+from ..core.audit_logging import security_auditor
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
@@ -29,17 +30,38 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
             return await call_next(request)
         
+        # Set audit context
+        client_ip = request.client.host if request.client else None
+        user_agent = request.headers.get("User-Agent", "unknown")
+        security_auditor.set_session_context(
+            client_ip=client_ip,
+            user_agent=user_agent
+        )
+        
         # Check API key using constant-time comparison
         api_key = request.headers.get("X-API-Key")
-        if not api_key or not self._secure_compare(api_key, settings.api_key):
-            self.logger.warning(
-                f"Unauthorized access attempt from {request.client.host}",
-                extra={"path": request.url.path, "client_host": request.client.host}
+        if not api_key:
+            security_auditor.log_authentication_failure(
+                "missing_api_key", 
+                client_ip=client_ip
+            )
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"error": "Missing API key", "code": "UNAUTHORIZED"}
+            )
+        
+        if not self._secure_compare(api_key, settings.api_key):
+            security_auditor.log_authentication_failure(
+                "invalid_api_key",
+                client_ip=client_ip
             )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={"error": "Invalid API key", "code": "UNAUTHORIZED"}
             )
+        
+        # Log successful authentication
+        security_auditor.log_authentication_success("api_user", "api_key")
         
         return await call_next(request)
 

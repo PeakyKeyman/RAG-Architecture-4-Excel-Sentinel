@@ -15,6 +15,8 @@ from ...vector_store.vertex_vector_store import vector_store
 from ...chunking.hierarchical_chunker import HierarchicalChunker
 from ...core.logging_config import get_logger
 from ...core.exceptions import ValidationError
+from ...core.audit_logging import security_auditor
+from ...core.pii_detection import pii_detector
 
 
 router = APIRouter(prefix="/documents", tags=["document-ingestion"])

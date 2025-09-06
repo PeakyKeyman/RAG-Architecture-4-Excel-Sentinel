@@ -15,12 +15,14 @@ from .hybrid_search import hybrid_search
 from .reranker.reranker_factory import RerankerFactory
 from .reranker.base_reranker import RerankCandidate
 from .context_packaging import context_packager
+from .adaptive_router import adaptive_router
 from ..knowledge_base.adjustment_engine import kb_adjustment_engine, FeedbackType
 
 
 class InferencePipelineStage(Enum):
     """Stages of the inference pipeline."""
     INITIALIZATION = "initialization"
+    ADAPTIVE_ROUTING = "adaptive_routing"
     HYDE_GENERATION = "hyde_generation"
     HYBRID_SEARCH = "hybrid_search"
     RERANKING = "reranking"
@@ -235,54 +237,64 @@ class InferencePipeline:
                 }
             )
             
-            # Stage 1: HyDE Generation
-            current_stage = InferencePipelineStage.HYDE_GENERATION
+            # Stage 1: Adaptive Routing
+            current_stage = InferencePipelineStage.ADAPTIVE_ROUTING
             stage_start = time.time()
             
-            hypothetical_docs = hyde_ensemble.generate_hypothetical_documents(request.query)
-            
-            stage_metrics["hyde_generation_ms"] = (time.time() - stage_start) * 1000
-            stage_metrics["hypothetical_docs_count"] = len(hypothetical_docs)
-            
-            # Stage 2: Hybrid Search
-            current_stage = InferencePipelineStage.HYBRID_SEARCH
-            stage_start = time.time()
-            
-            search_results = await hybrid_search.search(
+            # Route query to optimal strategy
+            routing_decision = adaptive_router.route_query(
                 query=request.query,
-                hypothetical_docs=hypothetical_docs,
-                top_k=request.top_k * 3,  # Get more candidates for reranking
+                user_id=request.user_id,
+                org_id=request.metadata.get('org_id'),
                 filters=request.filters
             )
             
-            stage_metrics["hybrid_search_ms"] = (time.time() - stage_start) * 1000
-            stage_metrics["search_candidates_count"] = len(search_results)
+            stage_metrics["adaptive_routing_ms"] = (time.time() - stage_start) * 1000
+            stage_metrics["selected_strategy"] = routing_decision.strategy.value
+            stage_metrics["query_complexity"] = routing_decision.complexity.value
+            stage_metrics["routing_confidence"] = routing_decision.confidence
             
-            # Stage 3: Reranking
-            current_stage = InferencePipelineStage.RERANKING
+            # Stage 2: Strategy Execution
+            current_stage = InferencePipelineStage.HYBRID_SEARCH  # Generic name for retrieval
             stage_start = time.time()
             
-            # Convert search results to rerank candidates
-            rerank_candidates = [
-                RerankCandidate(
-                    chunk_id=result.chunk_id,
-                    content=result.content,
-                    metadata=result.metadata,
-                    original_score=result.combined_score
-                )
-                for result in search_results
-            ]
-            
-            reranked_results = self.reranker.rerank(
+            # Execute the selected retrieval strategy
+            retrieval_results = await adaptive_router.execute_strategy(
+                decision=routing_decision,
                 query=request.query,
-                candidates=rerank_candidates,
-                top_k=request.top_k
+                top_k=request.top_k,
+                filters=request.filters,
+                user_id=request.user_id,
+                org_id=request.metadata.get('org_id')
             )
             
-            stage_metrics["reranking_ms"] = (time.time() - stage_start) * 1000
-            stage_metrics["reranked_results_count"] = len(reranked_results)
+            stage_metrics["strategy_execution_ms"] = (time.time() - stage_start) * 1000
+            stage_metrics.update(retrieval_results.get('routing_metadata', {}))
             
-            # Stage 4: Context Packaging
+            # Extract chunks from retrieval results
+            search_results = retrieval_results.get('chunks', [])
+            
+            # Convert to RerankCandidate format if needed for context packaging
+            rerank_candidates = []
+            for result in search_results:
+                if isinstance(result, dict):
+                    rerank_candidates.append(RerankCandidate(
+                        chunk_id=result.get('chunk_id', str(hash(str(result)))),
+                        content=result.get('content', ''),
+                        metadata=result.get('metadata', {}),
+                        original_score=result.get('score', 0.0)
+                    ))
+                else:
+                    # Handle non-dict results (legacy format)
+                    rerank_candidates.append(result)
+            
+            # Skip additional reranking since adaptive router handles it
+            # Use the results directly from the adaptive strategy
+            reranked_results = rerank_candidates
+            
+            stage_metrics["final_results_count"] = len(reranked_results)
+            
+            # Stage 3: Context Packaging
             current_stage = InferencePipelineStage.CONTEXT_PACKAGING
             stage_start = time.time()
             

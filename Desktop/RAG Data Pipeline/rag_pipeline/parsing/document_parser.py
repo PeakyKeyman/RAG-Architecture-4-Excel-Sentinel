@@ -23,6 +23,7 @@ except ImportError as e:
 
 from ..models.chunk import Document
 from ..core.logging_config import get_logger
+from .temporal_analyzer import temporal_analyzer
 
 
 logger = get_logger(__name__, "document_parser")
@@ -312,6 +313,20 @@ class DocumentParser:
         # Generate document ID
         document_id = f"{org_id}_{Path(file_path).stem}_{hash(file_path) % 100000}"
         
+        # Perform temporal analysis on content
+        document_text = content.text
+        file_creation_time = None
+        
+        # Try to get file creation time from metadata if available
+        if 'creation_time' in document_metadata:
+            file_creation_time = document_metadata['creation_time']
+        
+        temporal_metadata = temporal_analyzer.analyze_document(
+            content=document_text,
+            file_path=file_path,
+            creation_time=file_creation_time
+        )
+        
         # Combine text and tables
         full_content = [content.text]
         
@@ -338,6 +353,19 @@ class DocumentParser:
             # Content metadata
             'has_tables': len(content.tables) > 0,
             'table_count': len(content.tables),
+            
+            # Temporal metadata
+            'document_date': temporal_metadata.document_date.isoformat() if temporal_metadata.document_date else None,
+            'creation_date': temporal_metadata.creation_date.isoformat() if temporal_metadata.creation_date else None,
+            'referenced_dates': [d.isoformat() for d in temporal_metadata.referenced_dates],
+            'temporal_relevance': temporal_metadata.relevance_category.value,
+            'recency_score': temporal_metadata.recency_score,
+            'fiscal_quarter': temporal_metadata.fiscal_quarter,
+            'fiscal_year': temporal_metadata.fiscal_year,
+            'reporting_period': temporal_metadata.reporting_period,
+            'temporal_indicators': temporal_metadata.temporal_indicators,
+            'time_expressions': temporal_metadata.time_expressions,
+            
             **content.metadata,
             **document_metadata
         }

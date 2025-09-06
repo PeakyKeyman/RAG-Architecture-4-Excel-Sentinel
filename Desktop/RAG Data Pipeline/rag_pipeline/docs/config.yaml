@@ -104,6 +104,53 @@ evaluation:
   langsmith_project: "rag-pipeline-eval"
   ragas_batch_size: 10
 
+# Adaptive RAG Configuration
+adaptive_rag:
+  enabled: true
+  simple_query_optimization: true
+  complex_query_ensemble: true
+  performance_monitoring: true
+  fallback_to_default: true
+  
+  # Performance targets (milliseconds)
+  simple_query_max_ms: 500
+  medium_query_max_ms: 2000
+  complex_query_max_ms: 8000
+  
+  # Query classifier settings
+  classifier_logging: false
+  
+# Temporal Understanding Configuration
+temporal:
+  enabled: true
+  fiscal_year_start: "January"  # Can be customized per organization
+  relevance_decay_months: 12
+  
+  # Temporal scoring strategy
+  scoring_strategy: "balanced"  # balanced, recency_boost, relevance_match, business_context
+  
+  # Recency boost parameters
+  recency_boost_factor: 0.3
+  current_boost: 1.5
+  recent_boost: 1.2
+  historical_penalty: 0.8
+  archived_penalty: 0.5
+  
+  # Document type temporal weights
+  strategy_recency_weight: 0.8
+  financial_recency_weight: 0.9
+  policy_recency_weight: 0.4
+  operational_recency_weight: 0.6
+  
+  # Intent matching boosts
+  temporal_intent_boost: 0.2
+  comparative_boost: 0.15
+  
+  # Business context boosts
+  quarterly_report_boost: 0.1
+  annual_report_boost: 0.15
+  board_meeting_boost: 0.1
+
 # Development Configuration
 development:
   debug: false
